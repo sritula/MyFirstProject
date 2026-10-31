@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html>
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<style>
+  :root {
+    color-scheme: light;
+    --surface: #fcfcfb; --card: #ffffff; --text: #0b0b0b; --text-2: #52514e; --muted: #898781;
+    --border: rgba(11,11,11,0.12); --accent: #2a78d6; --good: #006300; --critical: #d03b3b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --surface: #1a1a19; --card: #232322; --text: #f0efec; --text-2: #c3c2b7;
+      --border: rgba(255,255,255,0.12); --accent: #3987e5; --good: #0ca30c; --critical: #e66767;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--surface); color: var(--text); }
+  main { max-width: 640px; margin: 0 auto; padding: 32px 20px 64px; }
+  h1 { font-size: 24px; margin: 0 0 4px; }
+  .sub { color: var(--text-2); margin: 0 0 24px; }
+  form { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 24px; }
+  .field { margin-bottom: 20px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  label { display: block; font-weight: 600; margin-bottom: 6px; }
+  .hint { color: var(--muted); font-weight: 400; font-size: 13px; }
+  input, select, textarea {
+    width: 100%; font: inherit; color: var(--text); background: var(--surface);
+    border: 1px solid var(--border); border-radius: 8px; padding: 9px 11px;
+  }
+  textarea { min-height: 96px; resize: vertical; }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .scale { display: flex; gap: 8px; }
+  .scale label { flex: 1; margin: 0; font-weight: 500; text-align: center; border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 0; cursor: pointer; }
+  .scale input { position: absolute; opacity: 0; width: 1px; }
+  .scale input:checked + span { color: var(--accent); }
+  .scale label:has(input:checked) { border-color: var(--accent); outline: 1px solid var(--accent); }
+  .scale label:has(input:focus-visible) { outline: 2px solid var(--accent); }
+  button { font: inherit; font-weight: 600; background: var(--accent); color: #fff; border: 0; border-radius: 8px;
+    padding: 11px 20px; cursor: pointer; }
+  button:disabled { opacity: .6; cursor: wait; }
+  .msg { margin-top: 16px; padding: 10px 12px; border-radius: 8px; display: none; }
+  .msg.ok { display: block; color: var(--good); border: 1px solid currentColor; }
+  .msg.err { display: block; color: var(--critical); border: 1px solid currentColor; }
+  @media (max-width: 520px) { .row { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Weekly status update</h1>
+  <p class="sub">Takes about two minutes. Your answers go to the team lead's dashboard.</p>
+
+  <form id="f" novalidate>
+    <div class="row">
+      <div class="field">
+        <label for="name">Your name</label>
+        <select id="name" name="name" required><option value="">Loading…</option></select>
+      </div>
+      <div class="field">
+        <label for="weekOf">Week of <span class="hint">(Monday)</span></label>
+        <input type="date" id="weekOf" name="weekOf" required>
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="done">What did you get done?</label>
+      <textarea id="done" name="done" required maxlength="5000"></textarea>
+    </div>
+    <div class="field">
+      <label for="next">What's next?</label>
+      <textarea id="next" name="next" required maxlength="5000"></textarea>
+    </div>
+    <div class="field">
+      <label for="blockers">Blockers <span class="hint">(leave empty if none)</span></label>
+      <textarea id="blockers" name="blockers" maxlength="5000"></textarea>
+    </div>
+
+    <div class="field">
+      <label id="confLabel">How confident are you about next week? <span class="hint">1 = at risk, 5 = on track</span></label>
+      <div class="scale" role="radiogroup" aria-labelledby="confLabel">
+        <label><input type="radio" name="confidence" value="1"><span>1</span></label>
+        <label><input type="radio" name="confidence" value="2"><span>2</span></label>
+        <label><input type="radio" name="confidence" value="3"><span>3</span></label>
+        <label><input type="radio" name="confidence" value="4"><span>4</span></label>
+        <label><input type="radio" name="confidence" value="5"><span>5</span></label>
+      </div>
+    </div>
+
+    <button type="submit" id="btn">Submit update</button>
+    <div id="msg" class="msg" role="status"></div>
+  </form>
+</main>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+
+  function mondayOf(d) {
+    const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    x.setDate(x.getDate() - ((x.getDay() + 6) % 7));
+    const p = (n) => String(n).padStart(2, '0');
+    return x.getFullYear() + '-' + p(x.getMonth() + 1) + '-' + p(x.getDate());
+  }
+  $('weekOf').value = mondayOf(new Date());
+
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} },
+  };
+  const saved = store.get('statusName');
+  google.script.run
+    .withSuccessHandler((names) => {
+      const sel = $('name');
+      sel.innerHTML = '<option value="">Choose…</option>';
+      names.forEach((n) => sel.add(new Option(n, n)));
+      if (saved && names.includes(saved)) sel.value = saved;
+    })
+    .withFailureHandler((e) => show('err', e.message))
+    .getTeam();
+
+  function show(kind, text) { const m = $('msg'); m.className = 'msg ' + kind; m.textContent = text; }
+
+  $('f').addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    const fd = new FormData(ev.target);
+    const data = Object.fromEntries(fd.entries());
+    if (!data.name) return show('err', 'Please choose your name.');
+    if (!data.done.trim() || !data.next.trim()) return show('err', 'Please fill in what you got done and what’s next.');
+    if (!data.confidence) return show('err', 'Please pick a confidence rating.');
+
+    $('btn').disabled = true;
+    show('', '');
+    google.script.run
+      .withSuccessHandler(() => {
+        store.set('statusName', data.name);
+        ['done', 'next', 'blockers'].forEach((k) => ($(k).value = ''));
+        document.querySelectorAll('input[name=confidence]').forEach((r) => (r.checked = false));
+        $('btn').disabled = false;
+        show('ok', 'Thanks, ' + data.name.split(' ')[0] + '. Your update is saved.');
+      })
+      .withFailureHandler((e) => { $('btn').disabled = false; show('err', e.message); })
+      .submitUpdate(data);
+  });
+</script>
+</body>
+</html>
